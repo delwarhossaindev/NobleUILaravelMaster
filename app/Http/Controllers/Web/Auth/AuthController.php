@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Web\Auth;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Session;
 use App\Models\User;
 use Illuminate\View\View;
@@ -59,9 +58,11 @@ class AuthController extends Controller
             return redirect()->route('login')->withErrors('Oops! You have entered invalid credentials.');
         } catch (\Exception $e) {
             // Handle any unexpected exceptions
+            \Log::error('Login attempt failed: ' . $e->getMessage()); // Optional logging for debugging
             return redirect()->route('login')->withErrors('An error occurred while trying to log you in. Please try again.');
         }
     }
+
 
 
     /**
@@ -72,22 +73,33 @@ class AuthController extends Controller
      */
     public function postRegistration(Request $request): RedirectResponse
     {
-        // Validate registration data
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email',
-            'password' => 'required|string|min:6|confirmed',
+            'password' => 'required|string|min:6',
         ]);
 
-        // Create a new user
-        $user = $this->create($request->all());
+        try {
+            // Attempt to create the user with a hashed password
+            $user = User::create([
+                'name' => $request->name,
+                'email' => $request->email,
+                'password' => bcrypt($request->password),
+            ]);
 
-        // Automatically log in the new user
-        Auth::login($user);
+            // Attempt to log in the newly created user
+            Auth::login($user);
 
-        // Redirect to the dashboard after successful registration
-        return redirect('dashboard')->withSuccess('Great! You have successfully registered and logged in.');
+            return redirect('dashboard')->withSuccess('Great! You have successfully registered and logged in.');
+        } catch (\Exception $e) {
+            // Log the error message for debugging purposes
+            \Log::error('Registration failed: '.$e->getMessage());
+
+            // Redirect back with an error message
+            return redirect()->back()->withErrors('Registration failed. Please try again later.');
+        }
     }
+
 
     /**
      * Display the dashboard.
@@ -96,6 +108,7 @@ class AuthController extends Controller
      */
     public function dashboard(): View|RedirectResponse
     {
+
         // Check if the user is authenticated
         if (Auth::check()) {
             return view('dashboard'); // Change to your dashboard view as necessary
@@ -111,14 +124,7 @@ class AuthController extends Controller
      * @param array $data
      * @return User
      */
-    protected function create(array $data): User
-    {
-        return User::create([
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'password' => Hash::make($data['password']),
-        ]);
-    }
+
 
     /**
      * Log the user out and invalidate the session.
